@@ -1200,6 +1200,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // electron-builder writes the Intel (x64) macOS build to bare `mac/`; only
+    // arm64 uses `mac-arm64/`. Intel Macs must still find their desktop app.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_hermes_desktop_app_finds_intel_mac_build() {
+        let root = unique_tmp_dir("app-mac-x64");
+        let app = root.join("apps/desktop/release/mac/Hermes.app");
+        let macos_dir = app.join("Contents/MacOS");
+        std::fs::create_dir_all(&macos_dir).unwrap();
+        std::fs::write(macos_dir.join("Hermes"), b"#!/bin/sh\n").unwrap();
+
+        assert_eq!(resolve_hermes_desktop_app(&root), Some(app));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn resolve_hermes_desktop_app_is_none_without_a_build() {
         let root = unique_tmp_dir("app-none");

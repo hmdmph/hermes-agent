@@ -45,10 +45,13 @@ without macOS Intel replaces the one shared macOS stable update feed with an
 arm64-only feed, so Intel Macs installed from a desktop bundle get no update
 until a release is cut with `--with macos-intel`. A release without Termux
 leaves the Termux APT channel on its previous release.
-The `Hermes-Setup.dmg` bootstrap installer is built for Apple Silicon only, so
-on an Intel Mac it reports "not supported on this Mac". Intel Macs can install
-the [CLI](./installation.md#linux--macos--wsl2) and run
-`hermes desktop`, or use a `darwin-x64` bundle from a release that included it.
+The `Hermes-Setup.dmg` bootstrap installer is a universal binary
+(`arm64` + `x86_64`), so the same download runs on Intel and Apple Silicon Macs;
+its CI build verifies both slices are present and smoke-launches the `x86_64`
+slice on Intel hardware. That coverage does not change the Tier 1 priority
+assigned to Apple Silicon. Intel Macs can also install the
+[CLI](./installation.md#linux--macos--wsl2) and run `hermes desktop`, or use a
+`darwin-x64` bundle from a release that included it.
 Linux desktop packaging is disabled in the release workflow, although local
 AppImage builds and native Linux PM bundle checks exist.
 
