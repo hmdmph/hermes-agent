@@ -67,6 +67,10 @@ The macOS custom signer retains the builder's entitlements and file selection.
 It refreshes digests after child signatures and before the outer app signature.
 Unsigned macOS builds refresh them at the end of `afterPack`.
 Do not refresh facts in `afterSign`: that changes resources covered by the signature.
+A macOS build without a Developer ID is signed ad-hoc in `afterSign`
+(`scripts/after-sign.mjs`), through the same custom signer and digest refresh.
+x64 Electron ships unsigned, and an app with no signature at all is denied
+Local Network access without a prompt, so it could not reach a LAN gateway.
 
 ## Local test build
 

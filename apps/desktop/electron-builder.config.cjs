@@ -123,7 +123,7 @@ module.exports = {
   // rewritten file (#105629). afterPack keeps the signing/payload work.
   afterExtract: 'scripts/after-extract.mjs',
   afterPack: 'scripts/after-pack.mjs',
-  ...(process.platform === 'darwin' ? { afterSign: 'scripts/notarize.mjs' } : {}),
+  ...(process.platform === 'darwin' ? { afterSign: 'scripts/after-sign.mjs' } : {}),
   extraResources: [
     {
       from: 'build/install-stamp.json',
