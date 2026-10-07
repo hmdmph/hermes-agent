@@ -38,7 +38,7 @@ from **Settings → Gateways**; see
 [Connecting to a remote backend](../user-guide/desktop.md#connecting-to-a-remote-backend).
 
 :::note
-The macOS installer is **Apple Silicon only**. macOS on x86 (Intel) processors is [not a supported platform](./platform-support.md#unsupported).
+The macOS installer is a universal binary for Apple Silicon and Intel Macs. Apple Silicon is the Tier 1 platform; Intel has build and update acceptance lanes, but some local voice engines are unavailable there (see [Platform Support](./platform-support.md#build-targets-and-support-priority)).
 :::
 
 ### Without Hermes Desktop:

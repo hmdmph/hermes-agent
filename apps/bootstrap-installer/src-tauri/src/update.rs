@@ -1128,6 +1128,21 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn lock_probe_paths_cover_intel_and_arm64_mac_builds() {
+        let root = Path::new("/x/hermes-agent");
+        let probes = install_lock_probe_paths(root);
+
+        for dir in ["mac", "mac-arm64"] {
+            let asar = root
+                .join("apps/desktop/release")
+                .join(dir)
+                .join("Hermes.app/Contents/Resources/app.asar");
+            assert!(probes.contains(&asar), "{dir} payload must be probed");
+        }
+    }
+
     #[test]
     fn locked_paths_ignores_missing_payloads() {
         let root = Path::new("/nonexistent/hermes-agent");

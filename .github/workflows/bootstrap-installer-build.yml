@@ -2,8 +2,9 @@ name: Bootstrap installer build
 
 # Hand-dispatched, signed builds of the Tauri bootstrap installer
 # (apps/bootstrap-installer, "Hermes-Setup"): Windows x64 exe signed with
-# Azure Trusted Signing, macOS arm64 dmg signed with the Developer ID cert and
-# notarized. Uploaded as run artifacts only; nothing is published.
+# Azure Trusted Signing, macOS universal (arm64 + x86_64) dmg signed with the
+# Developer ID cert and notarized, smoke-launched on an Intel runner. Uploaded
+# as run artifacts only; nothing is published.
 #
 # No caches of any kind: no actions/cache, no setup-node cache, and fresh
 # npm/cargo/electron-builder cache dirs under RUNNER_TEMP.
@@ -149,8 +150,10 @@ jobs:
           path: ${{ runner.temp }}/out/Hermes-Setup.exe
           if-no-files-found: error
 
-  macos-arm64:
-    name: Hermes-Setup.dmg (macos arm64, signed + notarized)
+  macos-universal:
+    # One universal binary so Intel and Apple Silicon Macs share the single
+    # Hermes-Setup.dmg download URL.
+    name: Hermes-Setup.dmg (macos universal, signed + notarized)
     runs-on: macos-latest
     environment: release-signing
     timeout-minutes: 90
@@ -235,15 +238,15 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          rustup target add aarch64-apple-darwin
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
           npm ci --workspace apps/bootstrap-installer --include-workspace-root=false --prefer-online --no-audit --no-fund
           cd apps/bootstrap-installer
-          npx tauri build --target aarch64-apple-darwin --bundles app,dmg
+          npx tauri build --target universal-apple-darwin --bundles app,dmg
 
       - name: Sign, notarize and staple the dmg
         run: |
           shopt -s nullglob
-          bundle="$CARGO_TARGET_DIR/aarch64-apple-darwin/release/bundle"
+          bundle="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle"
           dmgs=("$bundle"/dmg/*.dmg)
           test ${#dmgs[@]} -eq 1
           mkdir -p "$RUNNER_TEMP/out"
@@ -262,11 +265,18 @@ jobs:
       - name: Verify the app and dmg are signed and notarized
         run: |
           shopt -s nullglob
-          apps=("$CARGO_TARGET_DIR"/aarch64-apple-darwin/release/bundle/macos/*.app)
+          apps=("$CARGO_TARGET_DIR"/universal-apple-darwin/release/bundle/macos/*.app)
           test ${#apps[@]} -eq 1
           codesign --verify --strict --verbose=2 "${apps[0]}"
           xcrun stapler validate "${apps[0]}"
           spctl -a -vv -t exec "${apps[0]}"
+          # Both slices, or an Intel Mac refuses the app as "not supported".
+          exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${apps[0]}/Contents/Info.plist")"
+          archs="$(lipo -archs "${apps[0]}/Contents/MacOS/$exe")"
+          echo "archs: $archs"
+          for arch in arm64 x86_64; do
+            case " $archs " in *" $arch "*) ;; *) echo "::error::$exe lacks the $arch slice ($archs)"; exit 1 ;; esac
+          done
           # The macOS 26 layered icon: Tauri only logs when actool is missing,
           # so prove the catalog and its plist key made it into the bundle.
           test -f "${apps[0]}/Contents/Resources/Assets.car"
@@ -281,6 +291,48 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Hermes-Setup-macos-arm64
+          name: Hermes-Setup-macos-universal
           path: ${{ runner.temp }}/out/Hermes-Setup.dmg
           if-no-files-found: error
+
+  macos-intel-smoke:
+    # The universal dmg must actually launch on Intel hardware: the arch
+    # assertion above only proves the slice is present, not that it runs.
+    name: Hermes-Setup.dmg launches natively on Intel
+    needs: macos-universal
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: Hermes-Setup-macos-universal
+          path: ${{ runner.temp }}/in
+
+      - name: Verify and launch the x86_64 slice
+        run: |
+          set -euo pipefail
+          dmg="$RUNNER_TEMP/in/Hermes-Setup.dmg"
+          xcrun stapler validate "$dmg"
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\//{print $NF; exit}')
+          apps=("$mount"/*.app)
+          test ${#apps[@]} -eq 1
+          app="$RUNNER_TEMP/$(basename "${apps[0]}")"
+          ditto "${apps[0]}" "$app"
+          hdiutil detach "$mount"
+          spctl -a -vv -t exec "$app"
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          # An isolated HERMES_HOME: the installer logs its first line there,
+          # and nothing in the runner's real home is touched. The process is
+          # killed once it has started, before any install could begin.
+          export HERMES_HOME="$RUNNER_TEMP/hermes-home"
+          log="$HERMES_HOME/logs/bootstrap-installer.log"
+          arch -x86_64 "$exe" &
+          pid=$!
+          for _ in $(seq 1 60); do
+            grep -q "Hermes installer starting" "$log" 2>/dev/null && break
+            kill -0 "$pid" 2>/dev/null || { echo "::error::installer exited before starting"; cat "$log" 2>/dev/null || true; exit 1; }
+            sleep 1
+          done
+          grep -q "Hermes installer starting" "$log" || { echo "::error::installer never logged its start"; exit 1; }
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
